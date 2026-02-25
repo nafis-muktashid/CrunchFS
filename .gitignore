@@ -1,0 +1,57 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Compiled objects and binaries
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.exe
+crunchfs
+cfsctl
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.cproject
+.settings/
+
+# Backup and temp
+*.bak
+*.tmp
+*.temp
+*.log
+
+# Sanitizers and debug
+*.gcno
+*.gcda
+*.gcov
+tsan.*
+asan.*
+
+# Local mount / backing store (if kept inside repo for testing)
+/mnt/
+backing_store/
+*.cfs_data
+
+# OS cruft
+.DS_Store
+Thumbs.db
