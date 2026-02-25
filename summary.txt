@@ -1,0 +1,72 @@
+# CSE323 OS Project — Summary & Plan
+
+## Project title
+**Multithreaded transparent compressed FUSE-based filesystem**
+
+---
+
+## What we concluded
+
+### What the project is
+- A **file compression system** with a **filesystem abstraction** on top.
+- User mounts a special directory (e.g. `/mnt/cfs`). Any file copied there is stored as **compressed chunks** in a backing store.
+- From the user’s point of view: normal files (same logical size, e.g. 2 GB). From the system’s point of view: smaller on-disk footprint (e.g. 800 MB) due to compression.
+- Implemented as a **FUSE (Filesystem in Userspace)** daemon on Linux: we implement file ops (open, read, write, getattr, readdir, etc.) and compress/decompress data in user space.
+- **Multithreaded**: handle concurrent requests from the kernel and compress/decompress file chunks in parallel (thread pool).
+
+### Why it fits an OS course
+- Implements a **filesystem interface** (VFS-style operations).
+- Uses **concurrency** (threads, synchronization).
+- Involves **I/O**, buffering, and (optionally) caching.
+- Clear “wow” factor: mount, copy a 2 GB file, show that backing store is much smaller.
+
+### Verification for the professor
+- **Logical size** (what user sees): `ls -lh /mnt/cfs/file` — unchanged (e.g. 2 GB).
+- **Real disk usage**: `du -h <backing_store_path>` — shows compressed size (e.g. 800 MB).
+- Provide a **stats interface** (e.g. virtual file `/mnt/cfs/.cfs_stats` or CLI `cfsctl stats`) showing: total logical size, total compressed size, compression ratio.
+- Demo: highly compressible file (e.g. zeros) vs incompressible (e.g. .zip) to show compression is real.
+
+### Constraints we agreed on
+- **Language**: C or C++ (C++ preferred for threading/abstractions).
+- **Platform**: Fedora (Linux); develop and demo on Fedora.
+- **CUDA**: Not in scope for initial delivery; **keep the design open** (e.g. pluggable compression backend, chunk-based pipeline) so GPU acceleration can be added later without rewriting core logic.
+- **Team**: 3 people.
+- **Target**: Finish by early April (e.g. 1st April); about 1.5–2 months from now.
+
+---
+
+## Small project plan (phased)
+
+### Phase 1 — Foundation (≈ 2 weeks)
+- Set up repo, build system (e.g. CMake), and Fedora dev environment.
+- Integrate **libfuse** (or libfuse3) and implement a **minimal passthrough** FS: mount a directory that mirrors a backing directory (no compression yet). Verify read/write/listing work.
+- Define **on-disk layout**: how you store compressed chunks + metadata (e.g. one file per logical file, or chunk store + index). Pick a compression library (e.g. zstd or LZ4) and chunk size (e.g. 1–4 MB).
+- Design **metadata format** (file path → list of chunk IDs/sizes, logical size, etc.).
+
+### Phase 2 — Compression + single-threaded correctness (≈ 1.5–2 weeks)
+- Implement **write path**: split incoming data into chunks, compress each chunk, write to backing store, update metadata.
+- Implement **read path**: from metadata get chunk list, read and decompress only the chunks needed for the requested byte range, return data.
+- Ensure **getattr** reports correct logical size and timestamps; **readdir** and **unlink** work with your metadata.
+- Test with small and medium files; verify with `du` vs `ls` that compression is visible in backing store.
+
+### Phase 3 — Multithreading & robustness (≈ 1.5 weeks)
+- Introduce a **thread pool** (or FUSE multithreading): handle multiple concurrent file operations.
+- Parallelize **compression/decompression** of chunks for large files (e.g. process several chunks in parallel per read/write).
+- Add **stats** for verification: e.g. `.cfs_stats` or `cfsctl stats` (logical size, compressed size, ratio).
+- Basic **error handling** and clean unmount; document how to build, mount, and run a demo.
+
+### Phase 4 — Polish & report (≈ 1 week)
+- Demo script: create 1 GB of zeros, copy to `/mnt/cfs`, show `ls` vs `du` and stats.
+- Short report/slides: architecture, OS concepts (filesystem, concurrency), verification steps.
+- Optional: simple caching of decompressed chunks to improve read performance; keep design CUDA-ready (e.g. “compression backend” interface).
+
+---
+
+## CUDA-ready design (for later)
+- Keep compression/decompression behind an **interface** (e.g. `compress_chunk()`, `decompress_chunk()`).
+- Implement one backend with a standard CPU library (zstd/LZ4). Later, a second backend can call CUDA kernels for the same chunk API without changing the rest of the FS logic.
+
+---
+
+## One-line summary
+Build a FUSE filesystem on Fedora (C/C++) that transparently compresses file data in chunks using multithreading, with a clear way to show compression (du, stats) and a plan that leaves room for future CUDA integration.
