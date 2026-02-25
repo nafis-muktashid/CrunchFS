@@ -19,6 +19,29 @@ A FUSE filesystem on Fedora (C/C++) that transparently compresses file data in c
 
 ---
 
+## File structure
+
+```
+CrunchFS/
+├── CMakeLists.txt
+├── README.md
+├── summary.txt
+├── src/
+│   ├── main.cpp              # Entry, FUSE mount
+│   ├── fuse_ops.cpp/hpp      # FUSE callbacks
+│   ├── metadata.cpp/hpp      # Path → chunks, size, timestamps
+│   ├── chunk_store.cpp/hpp   # Backing-store I/O
+│   ├── compression/
+│   │   ├── interface.hpp     # compress_chunk / decompress_chunk API
+│   │   └── zstd_backend.cpp/hpp
+│   └── thread_pool.cpp/hpp   # Phase 3
+├── include/crunchfs/         # Optional: config.hpp
+├── tests/
+└── docs/                     # Phase 4
+```
+
+---
+
 ## Prerequisites (Fedora)
 
 - **FUSE**: `sudo dnf install fuse fuse-devel` (or `fuse3` / `fuse3-devel` for libfuse3)
