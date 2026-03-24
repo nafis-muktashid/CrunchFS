@@ -68,5 +68,10 @@
 
 ---
 
+## On-disk format (authoritative spec)
+See **docs/metadata-format-v1.md** in the repo for the binary metadata layout, chunk table, backing tree `.crunchfs/meta/` and `.crunchfs/data/`, zstd, and integration notes for compression and threading.
+
+---
+
 ## One-line summary
 Build a FUSE filesystem on Fedora (C/C++) that transparently compresses file data in chunks using multithreading, with a clear way to show compression (du, stats) and a plan that leaves room for future CUDA integration.

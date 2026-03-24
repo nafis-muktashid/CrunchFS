@@ -34,6 +34,7 @@ CrunchFS/
 ├── include/crunchfs/           # (planned)
 ├── tests/
 └── docs/
+    └── metadata-format-v1.md   # on-disk layout; contract for compression + FUSE
 ```
 
 ---
@@ -127,6 +128,12 @@ git rm --cached path/to/binary
 - **Logical size:** `ls -lh <mountpoint>/file`
 - **Compressed size:** `du -h <backing_store_path>`
 - **Stats:** `/mnt/cfs/.cfs_stats` or `cfsctl stats` (planned)
+
+---
+
+## Documentation
+
+- **[docs/metadata-format-v1.md](docs/metadata-format-v1.md)** — Binary `.meta` / `.dat` layout, chunk table, zstd, path → `file_id`, `read`/`write`/`getattr` rules, threading notes for Phase 3, and suggested compression API surface for implementers.
 
 ---
 
