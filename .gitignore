@@ -21,8 +21,24 @@ Makefile
 *.so.*
 *.dylib
 *.exe
+*.pdb
+*.ilk
+*.exp
 crunchfs
 cfsctl
+passthrough_cfs
+hello_fs
+
+# Binaries next to fuse-test sources (never commit)
+fuse-test/hello_fs
+fuse-test/passthrough_cfs
+
+# MSVC / Visual Studio
+.vs/
+x64/
+x86/
+Debug/
+Release/
 
 # IDE and editors
 .idea/
