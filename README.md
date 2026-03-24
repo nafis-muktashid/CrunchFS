@@ -10,12 +10,12 @@ A FUSE filesystem on Fedora (C/C++) that transparently compresses file data in c
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| **Phase 1** | Foundation: repo, CMake, Fedora env, minimal passthrough FS, on-disk layout & metadata design | Not started |
-| **Phase 2** | Compression: write/read paths, getattr/readdir/unlink, single-threaded correctness | Not started |
+| **Phase 1** | Foundation: Fedora + libfuse3, read-only passthrough prototype (`fuse-test/`), path mapping; full CMake layout & metadata design optional next | **Done** (prototype) |
+| **Phase 2** | Compression: write/read paths, chunking, backing layout, single-threaded correctness | Not started |
 | **Phase 3** | Multithreading, thread pool, stats (`.cfs_stats` or `cfsctl`), error handling | Not started |
 | **Phase 4** | Polish: demo script, report/slides, optional caching, CUDA-ready interface | Not started |
 
-**Overall:** Nothing implemented yet — project just starting.
+**Overall:** Phase 1 passthrough works on Linux (`fuse-test/passthrough_cfs.cpp`). Compression and main `src/` tree are next.
 
 ---
 
@@ -23,67 +23,100 @@ A FUSE filesystem on Fedora (C/C++) that transparently compresses file data in c
 
 ```
 CrunchFS/
-├── CMakeLists.txt
+├── CMakeLists.txt          # (when wired for main project)
 ├── README.md
 ├── summary.txt
-├── src/
-│   ├── main.cpp              # Entry, FUSE mount
-│   ├── fuse_ops.cpp/hpp      # FUSE callbacks
-│   ├── metadata.cpp/hpp      # Path → chunks, size, timestamps
-│   ├── chunk_store.cpp/hpp   # Backing-store I/O
+├── fuse-test/              # Phase 1 prototype
+│   ├── passthrough_cfs.cpp
+│   └── hello_fs.cpp        # minimal FUSE demo (optional)
+├── src/                    # Planned main tree
+│   ├── main.cpp
+│   ├── fuse_ops.cpp/hpp
+│   ├── metadata.cpp/hpp
+│   ├── chunk_store.cpp/hpp
 │   ├── compression/
-│   │   ├── interface.hpp     # compress_chunk / decompress_chunk API
+│   │   ├── interface.hpp
 │   │   └── zstd_backend.cpp/hpp
-│   └── thread_pool.cpp/hpp   # Phase 3
-├── include/crunchfs/         # Optional: config.hpp
+│   └── thread_pool.cpp/hpp
+├── include/crunchfs/
 ├── tests/
-└── docs/                     # Phase 4
+└── docs/
 ```
 
 ---
 
 ## Prerequisites (Fedora)
 
-- **FUSE**: `sudo dnf install fuse fuse-devel` (or `fuse3` / `fuse3-devel` for libfuse3)
-- **Build**: `gcc`/`g++`, `cmake`, `make`
-- **Compression** (when added): zstd or LZ4 — e.g. `sudo dnf install zstd zstd-devel` or `lz4 lz4-devel`
+```bash
+sudo dnf install fuse3 fuse3-devel gcc-c++ cmake make
+```
 
-*(Exact package names may vary; will be updated when the build is set up.)*
+- **Compression** (Phase 2+): e.g. `sudo dnf install zstd zstd-devel` or `lz4 lz4-devel`
 
 ---
 
-## How to build
+## Phase 1 prototype — build (`fuse-test`)
 
-*To be added in Phase 1.*
+From the repo root:
 
 ```bash
-# Placeholder — will be something like:
-# mkdir build && cd build
-# cmake ..
-# make
+cd fuse-test
+g++ -std=c++17 passthrough_cfs.cpp -lfuse3 -o passthrough_cfs
+```
+
+`FUSE_USE_VERSION` in source must match your installed libfuse3 (this tree uses 36 for current Fedora libfuse3).
+
+---
+
+## Phase 1 prototype — run
+
+**Terminal A** (foreground; shows errors):
+
+```bash
+mkdir -p /tmp/cfs_backing /tmp/cfs_mount
+echo "hello" > /tmp/cfs_backing/a.txt
+cd fuse-test
+./passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f
+```
+
+**Terminal B**:
+
+```bash
+ls -la /tmp/cfs_mount
+cat /tmp/cfs_mount/a.txt
+```
+
+Optional subdirectory check (create under backing, then list through mount):
+
+```bash
+mkdir -p /tmp/cfs_backing/a/b
+echo "nested" > /tmp/cfs_backing/a/b/c.txt
+ls -la /tmp/cfs_mount/a/b
+cat /tmp/cfs_mount/a/b/c.txt
 ```
 
 ---
 
-## How to run
+## Unmount
 
-*To be added after Phase 1 (passthrough FS).*
+- If `passthrough_cfs` is in the foreground: **Ctrl+C** in that terminal, or  
+- From another shell:
 
 ```bash
-# Placeholder — will be something like:
-# mkdir -p /mnt/cfs
-# ./crunchfs <backing_store_path> /mnt/cfs
-# ... use /mnt/cfs ...
-# fusermount -u /mnt/cfs
+fusermount3 -u /tmp/cfs_mount
 ```
+
+(On older setups, `fusermount -u /tmp/cfs_mount` instead.)
+
+Verify: `mount | grep cfs_mount` should show nothing.
 
 ---
 
-## Verification (when implemented)
+## Verification (target — when compression exists)
 
-- **Logical size:** `ls -lh /mnt/cfs/file` (e.g. 2 GB)
+- **Logical size:** `ls -lh <mountpoint>/file`
 - **Compressed size:** `du -h <backing_store_path>`
-- **Stats:** virtual file `/mnt/cfs/.cfs_stats` or CLI `cfsctl stats` (logical size, compressed size, ratio)
+- **Stats:** `/mnt/cfs/.cfs_stats` or `cfsctl stats` (planned)
 
 ---
 
