@@ -423,6 +423,15 @@ static int cfs_getattr(const char* path, struct stat* stbuf, struct fuse_file_in
         stbuf->st_size = static_cast<off_t>(meta.logical_size);
         stbuf->st_uid = getuid();
         stbuf->st_gid = getgid();
+        struct stat meta_st {};
+        std::string meta_path = meta_path_for_fuse_path(cfg, normalized);
+        if (lstat(meta_path.c_str(), &meta_st) == 0) {
+            stbuf->st_atim = meta_st.st_atim;
+            stbuf->st_mtim = meta_st.st_mtim;
+            stbuf->st_ctim = meta_st.st_ctim;
+            stbuf->st_blksize = meta_st.st_blksize;
+            stbuf->st_blocks = meta_st.st_blocks;
+        }
         return 0;
     }
 
@@ -631,6 +640,14 @@ static int cfs_utimens(const char* path, const struct timespec tv[2], struct fus
     auto* cfg = get_cfg();
     std::string normalized = normalize_path(path);
     if (logical_file_exists(cfg, normalized)) {
+        std::string meta_path = meta_path_for_fuse_path(cfg, normalized);
+        std::string data_path = data_path_for_fuse_path(cfg, normalized);
+        if (utimensat(AT_FDCWD, meta_path.c_str(), tv, 0) == -1) {
+            return -errno;
+        }
+        if (utimensat(AT_FDCWD, data_path.c_str(), tv, 0) == -1) {
+            return -errno;
+        }
         return 0;
     }
     std::string real = to_backing_path(cfg, path);
