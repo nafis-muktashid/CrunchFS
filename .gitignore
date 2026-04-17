@@ -67,6 +67,10 @@ asan.*
 /mnt/
 backing_store/
 *.cfs_data
+.crunchfs/
+cfs_backing/
+cfs_mount/
+mount/
 
 # OS cruft
 .DS_Store
