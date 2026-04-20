@@ -1,77 +1,163 @@
-# CSE323 OS Project — Summary & Plan
+# CSE323 OS Project — Updated Summary, Status, and Handoff
 
 ## Project title
-**Multithreaded transparent compressed FUSE-based filesystem**
+**Transparent compressed FUSE-based filesystem (single-thread baseline, multithreading next)**
 
 ---
 
-## What we concluded
+## 1) Current status snapshot
 
-### What the project is
-- A **file compression system** with a **filesystem abstraction** on top.
-- User mounts a special directory (e.g. `/mnt/cfs`). Any file copied there is stored as **compressed chunks** in a backing store.
-- From the user’s point of view: normal files (same logical size, e.g. 2 GB). From the system’s point of view: smaller on-disk footprint (e.g. 800 MB) due to compression.
-- Implemented as a **FUSE (Filesystem in Userspace)** daemon on Linux: we implement file ops (open, read, write, getattr, readdir, etc.) and compress/decompress data in user space.
-- **Multithreaded**: handle concurrent requests from the kernel and compress/decompress file chunks in parallel (thread pool).
+### Completed
 
-### Why it fits an OS course
-- Implements a **filesystem interface** (VFS-style operations).
-- Uses **concurrency** (threads, synchronization).
-- Involves **I/O**, buffering, and (optionally) caching.
-- Clear “wow” factor: mount, copy a 2 GB file, show that backing store is much smaller.
+- **Phase 1** completed: build system, FUSE daemon skeleton, mount/run path.
+- **Phase 2** completed and validated: compression + single-thread correctness.
 
-### Verification for the professor
-- **Logical size** (what user sees): `ls -lh /mnt/cfs/file` — unchanged (e.g. 2 GB).
-- **Real disk usage**: `du -h <backing_store_path>` — shows compressed size (e.g. 800 MB).
-- Provide a **stats interface** (e.g. virtual file `/mnt/cfs/.cfs_stats` or CLI `cfsctl stats`) showing: total logical size, total compressed size, compression ratio.
-- Demo: highly compressible file (e.g. zeros) vs incompressible (e.g. .zip) to show compression is real.
+### In progress / next
 
-### Constraints we agreed on
-- **Language**: C or C++ (C++ preferred for threading/abstractions).
-- **Platform**: Fedora (Linux); develop and demo on Fedora.
-- **CUDA**: Not in scope for initial delivery; **keep the design open** (e.g. pluggable compression backend, chunk-based pipeline) so GPU acceleration can be added later without rewriting core logic.
-- **Team**: 3 people.
-- **Target**: Finish by early April (e.g. 1st April); about 1.5–2 months from now.
+- **Phase 3** not implemented yet: multithreading/thread-pool + stats interface.
+- **Phase 4** pending: demo automation, report polish, optional caching.
 
 ---
 
-## Small project plan (phased)
+## 2) What is implemented now
 
-### Phase 1 — Foundation (≈ 2 weeks)
-- Set up repo, build system (e.g. CMake), and Fedora dev environment.
-- Integrate **libfuse** (or libfuse3) and implement a **minimal passthrough** FS: mount a directory that mirrors a backing directory (no compression yet). Verify read/write/listing work.
-- Define **on-disk layout**: how you store compressed chunks + metadata (e.g. one file per logical file, or chunk store + index). Pick a compression library (e.g. zstd or LZ4) and chunk size (e.g. 1–4 MB).
-- Design **metadata format** (file path → list of chunk IDs/sizes, logical size, etc.).
-
-### Phase 2 — Compression + single-threaded correctness (≈ 1.5–2 weeks)
-- Implement **write path**: split incoming data into chunks, compress each chunk, write to backing store, update metadata.
-- Implement **read path**: from metadata get chunk list, read and decompress only the chunks needed for the requested byte range, return data.
-- Ensure **getattr** reports correct logical size and timestamps; **readdir** and **unlink** work with your metadata.
-- Test with small and medium files; verify with `du` vs `ls` that compression is visible in backing store.
-
-### Phase 3 — Multithreading & robustness (≈ 1.5 weeks)
-- Introduce a **thread pool** (or FUSE multithreading): handle multiple concurrent file operations.
-- Parallelize **compression/decompression** of chunks for large files (e.g. process several chunks in parallel per read/write).
-- Add **stats** for verification: e.g. `.cfs_stats` or `cfsctl stats` (logical size, compressed size, ratio).
-- Basic **error handling** and clean unmount; document how to build, mount, and run a demo.
-
-### Phase 4 — Polish & report (≈ 1 week)
-- Demo script: create 1 GB of zeros, copy to `/mnt/cfs`, show `ls` vs `du` and stats.
-- Short report/slides: architecture, OS concepts (filesystem, concurrency), verification steps.
-- Optional: simple caching of decompressed chunks to improve read performance; keep design CUDA-ready (e.g. “compression backend” interface).
+- FUSE daemon in `src/passthrough_cfs.cpp`.
+- Compression-backed storage under:
+  - `<backing>/.crunchfs/meta/*.meta`
+  - `<backing>/.crunchfs/data/*.dat`
+  - `<backing>/.crunchfs/index.txt` for path listing support.
+- Core logical file operations working:
+  - `getattr` (logical size)
+  - `open/create`
+  - `read/write`
+  - `truncate`
+  - `rename/unlink`
+  - `readdir`
+  - `utimens` handling for logical files
+- Single-thread test mode used in validation via FUSE option `-s`.
 
 ---
 
-## CUDA-ready design (for later)
-- Keep compression/decompression behind an **interface** (e.g. `compress_chunk()`, `decompress_chunk()`).
-- Implement one backend with a standard CPU library (zstd/LZ4). Later, a second backend can call CUDA kernels for the same chunk API without changing the rest of the FS logic.
+## 3) Validation already performed
+
+- Basic read/write/append/truncate on mounted path.
+- Rename and delete behavior verified.
+- Backing storage format verified under `.crunchfs/meta` and `.crunchfs/data`.
+- Compression behavior validated:
+  - `/dev/zero` -> highly compressible
+  - `/dev/urandom` -> weakly/not compressible
+- Integrity validated with `sha256sum`.
+- Remount persistence validated.
+
+This means the project is **complete for single-thread scope**.
 
 ---
 
-## On-disk format (authoritative spec)
-See **docs/metadata-format-v1.md** in the repo for the binary metadata layout, chunk table, backing tree `.crunchfs/meta/` and `.crunchfs/data/`, zstd, and integration notes for compression and threading.
+## 4) Reproducible commands (authoritative)
+
+## Build
+
+```bash
+cd /home/nafis/CSE323/Project/CrunchFS
+mkdir -p build && cd build
+cmake ..
+cmake --build .
+```
+
+## Run daemon (single-thread validation mode)
+
+```bash
+mkdir -p /tmp/cfs_backing /tmp/cfs_mount
+/home/nafis/CSE323/Project/CrunchFS/build/passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f -s
+```
+
+## Basic correctness checks
+
+```bash
+echo "hello crunchfs" > /tmp/cfs_mount/a.txt
+cat /tmp/cfs_mount/a.txt
+echo "more text" >> /tmp/cfs_mount/a.txt
+truncate -s 5 /tmp/cfs_mount/a.txt
+cat /tmp/cfs_mount/a.txt
+mv /tmp/cfs_mount/a.txt /tmp/cfs_mount/b.txt
+cat /tmp/cfs_mount/b.txt
+rm /tmp/cfs_mount/b.txt
+```
+
+## Backing layout check
+
+```bash
+ls -la /tmp/cfs_backing/.crunchfs
+ls -la /tmp/cfs_backing/.crunchfs/meta
+ls -la /tmp/cfs_backing/.crunchfs/data
+du -h /tmp/cfs_backing/.crunchfs/data
+```
+
+## Compressible vs incompressible demo
+
+```bash
+rm -f /tmp/cfs_mount/big_zero.bin /tmp/cfs_mount/big_rand.bin
+
+dd if=/dev/zero of=/tmp/cfs_mount/big_zero.bin bs=1M count=100 status=progress
+ls -lh /tmp/cfs_mount/big_zero.bin
+du -h /tmp/cfs_backing/.crunchfs/data
+
+dd if=/dev/urandom of=/tmp/cfs_mount/big_rand.bin bs=1M count=100 status=progress
+ls -lh /tmp/cfs_mount/big_rand.bin
+du -h /tmp/cfs_backing/.crunchfs/data
+```
+
+## Persistence + integrity
+
+```bash
+sha256sum /tmp/cfs_mount/big_zero.bin
+fusermount3 -u /tmp/cfs_mount
+/home/nafis/CSE323/Project/CrunchFS/build/passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f -s
+sha256sum /tmp/cfs_mount/big_zero.bin
+```
 
 ---
 
-## One-line summary
-Build a FUSE filesystem on Fedora (C/C++) that transparently compresses file data in chunks using multithreading, with a clear way to show compression (du, stats) and a plan that leaves room for future CUDA integration.
+## 5) Clarification on "single-thread" claim
+
+- Current validation is done in **FUSE single-thread mode** (`-s`), meaning request handling is serialized at FUSE dispatch level.
+- This does **not** guarantee the process has exactly one OS thread total.
+- No application-level thread pool / parallel chunk workers are implemented yet.
+
+---
+
+## 6) Known limitations (current build)
+
+- No multithreaded request processing/work queue yet.
+- No `.cfs_stats` / `cfsctl stats` endpoint yet.
+- No chunk cache optimization yet.
+- Current path-id hashing is deterministic in code; if strict SHA-256 mapping is required by spec, it should be aligned.
+
+---
+
+## 7) Phase 3 implementation plan (next actions)
+
+1. Remove `-s` during normal runs for concurrent FUSE request handling.
+2. Add per-file locking to protect logical state and metadata/data writes.
+3. Make index operations thread-safe.
+4. Add chunk compression/decompression parallelism (thread pool or equivalent).
+5. Add stats reporting:
+   - total logical bytes
+   - total compressed bytes
+   - compression ratio
+6. Run concurrency stress tests and update docs.
+
+---
+
+## 8) Constraints and direction (unchanged)
+
+- Language: C/C++
+- Platform: Fedora/Linux + FUSE3
+- Compression backend: zstd (current)
+- CUDA: not required now; keep backend interface pluggable for future upgrade
+
+---
+
+## 9) One-line summary
+
+CrunchFS currently delivers a validated **single-thread compressed FUSE filesystem baseline**, with multithreading and stats planned next as Phase 3.
