@@ -1,5 +1,5 @@
 #include "chunk_store.hpp"
-#include "compression/interface.hpp"
+#include "compresslib.h"
 #include <fstream>
 #include <filesystem>
 #include <vector>
@@ -18,9 +18,9 @@ std::string ChunkStore::chunk_path(const std::string& path_id, size_t idx) const
 
 size_t ChunkStore::write_chunk(const std::string& path_id, size_t chunk_idx,
                                const void* data, size_t len) {
-    size_t cap = compress_bound(len);
+    size_t cap = compress_bound_zstd(len);
     std::vector<char> buf(cap);
-    size_t csz = compress_chunk(data, len, buf.data(), cap);
+    size_t csz = compress_buffer_zstd(data, len, buf.data(), cap, 1);
     if (csz == 0) return 0;
 
     std::unique_lock lk(mu_);
@@ -47,7 +47,7 @@ size_t ChunkStore::read_chunk(const std::string& path_id, size_t chunk_idx,
 
     // Decompress into a temporary buffer sized to max chunk
     std::vector<char> tmp(CHUNK_SIZE * 2);
-    size_t dsz = decompress_chunk(cbuf.data(), csz, tmp.data(), tmp.size());
+    size_t dsz = decompress_buffer_zstd(cbuf.data(), csz, tmp.data(), tmp.size());
     if (dsz == 0) return 0;
     out.insert(out.end(), tmp.begin(), tmp.begin() + dsz);
     return dsz;
@@ -57,6 +57,11 @@ void ChunkStore::remove_chunks(const std::string& path_id, size_t n_chunks) {
     std::unique_lock lk(mu_);
     for (size_t i = 0; i < n_chunks; ++i)
         fs::remove(chunk_path(path_id, i));
+}
+
+void ChunkStore::remove_chunk(const std::string& path_id, size_t chunk_idx) {
+    std::unique_lock lk(mu_);
+    fs::remove(chunk_path(path_id, chunk_idx));
 }
 
 bool ChunkStore::rename_chunks(const std::string& old_id, const std::string& new_id,

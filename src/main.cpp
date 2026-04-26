@@ -1,4 +1,4 @@
-#define FUSE_USE_VERSION 35
+#define FUSE_USE_VERSION 36
 #include <fuse3/fuse.h>
 #include <cstdio>
 #include <cstring>

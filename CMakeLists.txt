@@ -17,8 +17,8 @@ add_executable(passthrough_cfs
     src/fuse_ops.cpp
     src/metadata.cpp
     src/chunk_store.cpp
-    src/compression/zstd_backend.cpp
     src/thread_pool.cpp
+    src/conpresslib.cpp
 )
 
 target_include_directories(passthrough_cfs PRIVATE

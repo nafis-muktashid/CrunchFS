@@ -123,3 +123,28 @@ vector<uint8_t> decompress_file_chunks(
 
     return result;
 }
+
+size_t compress_bound_zstd(size_t src_size) {
+    return ZSTD_compressBound(src_size);
+}
+
+size_t compress_buffer_zstd(
+    const void* src,
+    size_t src_size,
+    void* dst,
+    size_t dst_capacity,
+    int level
+) {
+    size_t result = ZSTD_compress(dst, dst_capacity, src, src_size, level);
+    return ZSTD_isError(result) ? 0 : result;
+}
+
+size_t decompress_buffer_zstd(
+    const void* src,
+    size_t src_size,
+    void* dst,
+    size_t dst_capacity
+) {
+    size_t result = ZSTD_decompress(dst, dst_capacity, src, src_size);
+    return ZSTD_isError(result) ? 0 : result;
+}

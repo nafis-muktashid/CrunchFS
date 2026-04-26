@@ -1,163 +1,61 @@
-# CSE323 OS Project — Updated Summary, Status, and Handoff
+# CSE323 Project Summary (CrunchFS-2)
 
-## Project title
-**Transparent compressed FUSE-based filesystem (single-thread baseline, multithreading next)**
+## Current completion
 
----
+- Phase 1: complete.
+- Phase 2: complete.
+- Phase 3: complete.
+- Phase 4: optional polish only.
 
-## 1) Current status snapshot
+## What is now implemented
 
-### Completed
-
-- **Phase 1** completed: build system, FUSE daemon skeleton, mount/run path.
-- **Phase 2** completed and validated: compression + single-thread correctness.
-
-### In progress / next
-
-- **Phase 3** not implemented yet: multithreading/thread-pool + stats interface.
-- **Phase 4** pending: demo automation, report polish, optional caching.
-
----
-
-## 2) What is implemented now
-
-- FUSE daemon in `src/passthrough_cfs.cpp`.
-- Compression-backed storage under:
+- Modular codebase:
+  - `src/main.cpp`
+  - `src/fuse_ops.cpp`
+  - `src/metadata.cpp`
+  - `src/chunk_store.cpp`
+  - `src/thread_pool.cpp`
+  - `src/conpresslib.cpp` + `src/compresslib.h`
+- Single active compression pipeline: `compresslib` (`conpresslib.cpp`).
+- On-disk persistence:
+  - `<backing>/.crunchfs/index.txt`
   - `<backing>/.crunchfs/meta/*.meta`
   - `<backing>/.crunchfs/data/*.dat`
-  - `<backing>/.crunchfs/index.txt` for path listing support.
-- Core logical file operations working:
-  - `getattr` (logical size)
-  - `open/create`
-  - `read/write`
-  - `truncate`
-  - `rename/unlink`
-  - `readdir`
-  - `utimens` handling for logical files
-- Single-thread test mode used in validation via FUSE option `-s`.
+- Thread-safe per-file operations with per-file shared/exclusive locks.
+- Multithreaded chunk read path using worker pool.
+- `.cfs_stats` virtual file endpoint:
+  - `logical_bytes`
+  - `compressed_bytes`
+  - `ratio`
 
----
+## Supported file operations
 
-## 3) Validation already performed
+- `getattr`, `readdir`, `open`, `create`, `read`, `write`
+- `truncate`, `unlink`, `rename`, `utimens`, `chmod`
 
-- Basic read/write/append/truncate on mounted path.
-- Rename and delete behavior verified.
-- Backing storage format verified under `.crunchfs/meta` and `.crunchfs/data`.
-- Compression behavior validated:
-  - `/dev/zero` -> highly compressible
-  - `/dev/urandom` -> weakly/not compressible
-- Integrity validated with `sha256sum`.
-- Remount persistence validated.
+## Stability fixes completed
 
-This means the project is **complete for single-thread scope**.
+- Fixed truncate shrink cleanup to remove correct trailing chunks.
+- Added safe handling for zero-length writes.
+- Read path now tolerates sparse/missing chunks by returning zero-filled data.
+- Guaranteed at least one worker thread even when hardware concurrency reports zero.
 
----
+## Verification checklist
 
-## 4) Reproducible commands (authoritative)
+- Build succeeds (`cmake .. && cmake --build .`).
+- Mount and basic CRUD pass.
+- Compression is observable (`/dev/zero` vs `/dev/urandom`).
+- `.cfs_stats` reports aggregated values.
+- Concurrent smoke workload runs against mounted files.
+- Hash matches before and after remount.
 
-## Build
+## One-command validation
 
-```bash
-cd /home/nafis/CSE323/Project/CrunchFS
-mkdir -p build && cd build
-cmake ..
-cmake --build .
-```
+- Run `./demo.sh` from project root.
+- Script prints PASS/FAIL per section and exits non-zero on failure.
 
-## Run daemon (single-thread validation mode)
+## Remaining optional items (not blockers)
 
-```bash
-mkdir -p /tmp/cfs_backing /tmp/cfs_mount
-/home/nafis/CSE323/Project/CrunchFS/build/passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f -s
-```
-
-## Basic correctness checks
-
-```bash
-echo "hello crunchfs" > /tmp/cfs_mount/a.txt
-cat /tmp/cfs_mount/a.txt
-echo "more text" >> /tmp/cfs_mount/a.txt
-truncate -s 5 /tmp/cfs_mount/a.txt
-cat /tmp/cfs_mount/a.txt
-mv /tmp/cfs_mount/a.txt /tmp/cfs_mount/b.txt
-cat /tmp/cfs_mount/b.txt
-rm /tmp/cfs_mount/b.txt
-```
-
-## Backing layout check
-
-```bash
-ls -la /tmp/cfs_backing/.crunchfs
-ls -la /tmp/cfs_backing/.crunchfs/meta
-ls -la /tmp/cfs_backing/.crunchfs/data
-du -h /tmp/cfs_backing/.crunchfs/data
-```
-
-## Compressible vs incompressible demo
-
-```bash
-rm -f /tmp/cfs_mount/big_zero.bin /tmp/cfs_mount/big_rand.bin
-
-dd if=/dev/zero of=/tmp/cfs_mount/big_zero.bin bs=1M count=100 status=progress
-ls -lh /tmp/cfs_mount/big_zero.bin
-du -h /tmp/cfs_backing/.crunchfs/data
-
-dd if=/dev/urandom of=/tmp/cfs_mount/big_rand.bin bs=1M count=100 status=progress
-ls -lh /tmp/cfs_mount/big_rand.bin
-du -h /tmp/cfs_backing/.crunchfs/data
-```
-
-## Persistence + integrity
-
-```bash
-sha256sum /tmp/cfs_mount/big_zero.bin
-fusermount3 -u /tmp/cfs_mount
-/home/nafis/CSE323/Project/CrunchFS/build/passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f -s
-sha256sum /tmp/cfs_mount/big_zero.bin
-```
-
----
-
-## 5) Clarification on "single-thread" claim
-
-- Current validation is done in **FUSE single-thread mode** (`-s`), meaning request handling is serialized at FUSE dispatch level.
-- This does **not** guarantee the process has exactly one OS thread total.
-- No application-level thread pool / parallel chunk workers are implemented yet.
-
----
-
-## 6) Known limitations (current build)
-
-- No multithreaded request processing/work queue yet.
-- No `.cfs_stats` / `cfsctl stats` endpoint yet.
-- No chunk cache optimization yet.
-- Current path-id hashing is deterministic in code; if strict SHA-256 mapping is required by spec, it should be aligned.
-
----
-
-## 7) Phase 3 implementation plan (next actions)
-
-1. Remove `-s` during normal runs for concurrent FUSE request handling.
-2. Add per-file locking to protect logical state and metadata/data writes.
-3. Make index operations thread-safe.
-4. Add chunk compression/decompression parallelism (thread pool or equivalent).
-5. Add stats reporting:
-   - total logical bytes
-   - total compressed bytes
-   - compression ratio
-6. Run concurrency stress tests and update docs.
-
----
-
-## 8) Constraints and direction (unchanged)
-
-- Language: C/C++
-- Platform: Fedora/Linux + FUSE3
-- Compression backend: zstd (current)
-- CUDA: not required now; keep backend interface pluggable for future upgrade
-
----
-
-## 9) One-line summary
-
-CrunchFS currently delivers a validated **single-thread compressed FUSE filesystem baseline**, with multithreading and stats planned next as Phase 3.
+- Strict SHA-256 path-id mapping (currently FNV-1a 64-bit hex).
+- More FUSE callbacks (`mkdir`, `rmdir`, `chown`, `statfs`, `mknod`, `link`, `symlink`) if required by rubric.
+- Phase 4 extras: cache layer, CUDA implementation, report/slide packaging.

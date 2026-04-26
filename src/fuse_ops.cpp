@@ -1,4 +1,4 @@
-#define FUSE_USE_VERSION 35
+#define FUSE_USE_VERSION 36
 #include <fuse3/fuse.h>
 #include <string>
 #include <cstring>
@@ -17,7 +17,6 @@
 #include "metadata.hpp"
 #include "chunk_store.hpp"
 #include "thread_pool.hpp"
-#include "compression/interface.hpp"
 
 CfsConfig g_cfg{};
 static MetaStore*  g_meta  = nullptr;
@@ -129,6 +128,10 @@ static int cfs_read(const char* path, char* buf, size_t size, off_t offset,
         g_pool->enqueue([&, i]{
             if (err) return;
             std::shared_lock<std::shared_mutex> lk(file_lock(id));
+            if (g_store->chunk_disk_size(id, fc + i) == 0) {
+                cdata[i].assign(ChunkStore::CHUNK_SIZE, '\0');
+                return;
+            }
             if (!g_store->read_chunk(id, fc + i, cdata[i])) err = true;
         });
     }
@@ -149,6 +152,7 @@ static int cfs_read(const char* path, char* buf, size_t size, off_t offset,
 
 static int cfs_write(const char* path, const char* buf, size_t size, off_t offset,
                      struct fuse_file_info*) {
+    if (size == 0) return 0;
     std::string p = norm(path);
     std::string id = g_meta->path_to_id(p);
     if (id.empty()) return -ENOENT;
@@ -189,7 +193,7 @@ static int cfs_truncate(const char* path, off_t ns, struct fuse_file_info*) {
     if (nsz == 0) { g_store->remove_chunks(id, m.n_chunks); m.n_chunks=0; m.logical_size=0; m.compressed_size=0; }
     else if (nsz < m.logical_size) {
         size_t keep = (nsz + ChunkStore::CHUNK_SIZE - 1) / ChunkStore::CHUNK_SIZE;
-        for (size_t i = keep; i < m.n_chunks; ++i) g_store->remove_chunks(id, 1);
+        for (size_t i = keep; i < m.n_chunks; ++i) g_store->remove_chunk(id, i);
         m.n_chunks = keep; m.logical_size = nsz; m.compressed_size = 0;
         for (size_t i = 0; i < m.n_chunks; ++i) m.compressed_size += g_store->chunk_disk_size(id, i);
     } else { m.logical_size = nsz; }
@@ -258,7 +262,8 @@ const fuse_operations* get_cfs_operations() {
         std::string bd = g_cfg.backing_dir;
         g_meta  = new MetaStore(bd);
         g_store = new ChunkStore(bd);
-        g_pool  = new ThreadPool(std::thread::hardware_concurrency());
+        size_t workers = std::max<size_t>(1, std::thread::hardware_concurrency());
+        g_pool  = new ThreadPool(workers);
         return nullptr;
     };
     cfs_ops.destroy = [](void*) {

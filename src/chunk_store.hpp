@@ -23,6 +23,8 @@ public:
 
     // Delete all chunks for path_id.
     void remove_chunks(const std::string& path_id, size_t n_chunks);
+    // Delete one specific chunk for path_id.
+    void remove_chunk(const std::string& path_id, size_t chunk_idx);
 
     // Rename: copy all chunk files from old_id → new_id, remove old.
     bool rename_chunks(const std::string& old_id, const std::string& new_id,
