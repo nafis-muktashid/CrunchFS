@@ -15,3 +15,20 @@ std::vector<uint8_t> decompress_file_chunks(
     size_t offset,
     size_t size
 );
+
+size_t compress_buffer_zstd(
+    const void* src,
+    size_t src_size,
+    void* dst,
+    size_t dst_capacity,
+    int level = 1
+);
+
+size_t decompress_buffer_zstd(
+    const void* src,
+    size_t src_size,
+    void* dst,
+    size_t dst_capacity
+);
+
+size_t compress_bound_zstd(size_t src_size);
