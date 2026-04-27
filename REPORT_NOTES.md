@@ -1,6 +1,6 @@
-# CrunchFS Report Notes (CrunchFS-2, Phase 3 Complete)
+# CrunchFS Report Notes (Phase 3 Complete)
 
-This file is a report-writing companion for the current state of `CrunchFS-2/CrunchFS`.
+This file is a report-writing companion for the current state of `CrunchFS`.
 It summarizes what is completed, what was validated, what to include in the report, and what remains.
 
 ---
@@ -98,85 +98,153 @@ Important wording:
 ## Build
 
 ```bash
-cd /home/nafis/CSE323/Project/CrunchFS-2/CrunchFS
 mkdir -p build && cd build
 cmake ..
 cmake --build .
 ```
 
+- Expected return/output:
+  - `mkdir -p` prints nothing on success.
+  - `cmake ..` ends with build-system generation confirmation (e.g., "Configuring done", "Generating done").
+  - `cmake --build .` ends with successful target build output.
+- Meaning:
+  - Project configuration and compilation succeeded; executable is available in `build/`.
+
 ## Run daemon (multithread-capable mode)
 
 ```bash
-mkdir -p /tmp/cfs2_backing /tmp/cfs2_mount
-/home/nafis/CSE323/Project/CrunchFS-2/CrunchFS/build/passthrough_cfs /tmp/cfs2_backing /tmp/cfs2_mount -f
+mkdir -p /tmp/cfs_backing /tmp/cfs_mount
+./passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f
 ```
+
+- Expected return/output:
+  - `mkdir -p` prints nothing on success.
+  - `./build/passthrough_cfs ... -f` stays in foreground with no prompt return until unmounted.
+- Meaning:
+  - Filesystem daemon is running and mounted; keep this terminal open during tests.
 
 ## Basic correctness
 
 ```bash
-echo "hello crunchfs" > /tmp/cfs2_mount/a.txt
-cat /tmp/cfs2_mount/a.txt
-echo "more text" >> /tmp/cfs2_mount/a.txt
-truncate -s 5 /tmp/cfs2_mount/a.txt
-cat /tmp/cfs2_mount/a.txt
-mv /tmp/cfs2_mount/a.txt /tmp/cfs2_mount/b.txt
-cat /tmp/cfs2_mount/b.txt
-rm /tmp/cfs2_mount/b.txt
+echo "hello crunchfs" > /tmp/cfs_mount/a.txt
+cat /tmp/cfs_mount/a.txt
+echo "more text" >> /tmp/cfs_mount/a.txt
+truncate -s 5 /tmp/cfs_mount/a.txt
+cat /tmp/cfs_mount/a.txt
+mv /tmp/cfs_mount/a.txt /tmp/cfs_mount/b.txt
+cat /tmp/cfs_mount/b.txt
+rm /tmp/cfs_mount/b.txt
 ```
+
+- Expected return/output:
+  - First `cat` prints file contents including appended text.
+  - After `truncate -s 5`, second `cat` prints only first 5 bytes (e.g., `hello`).
+  - `mv` and `rm` print nothing on success.
+- Meaning:
+  - Create/read/append/truncate/rename/delete semantics work correctly through mount path.
 
 ## Backing layout check
 
 ```bash
-ls -la /tmp/cfs2_backing/.crunchfs
-ls -la /tmp/cfs2_backing/.crunchfs/meta
-ls -la /tmp/cfs2_backing/.crunchfs/data
-du -h /tmp/cfs2_backing/.crunchfs/data
+ls -la /tmp/cfs_backing/.crunchfs
+ls -la /tmp/cfs_backing/.crunchfs/meta
+ls -la /tmp/cfs_backing/.crunchfs/data
+du -h /tmp/cfs_backing/.crunchfs/data
 ```
+
+- Expected return/output:
+  - `ls -la` lists `.crunchfs`, `meta`, and `data` contents.
+  - `du -h` prints physical disk usage of stored compressed chunks.
+- Meaning:
+  - Internal metadata/chunk structure exists and storage is being materialized in backing path.
 
 ## Compressible vs incompressible demo
 
 ```bash
-rm -f /tmp/cfs2_mount/big_zero.bin /tmp/cfs2_mount/big_rand.bin
+rm -f /tmp/cfs_mount/big_zero.bin /tmp/cfs_mount/big_rand.bin
 
-dd if=/dev/zero of=/tmp/cfs2_mount/big_zero.bin bs=1M count=100 status=progress
-ls -lh /tmp/cfs2_mount/big_zero.bin
-du -h /tmp/cfs2_backing/.crunchfs/data
+dd if=/dev/zero of=/tmp/cfs_mount/big_zero.bin bs=1M count=100 status=progress
+ls -lh /tmp/cfs_mount/big_zero.bin
+du -h /tmp/cfs_backing/.crunchfs/data
 
-dd if=/dev/urandom of=/tmp/cfs2_mount/big_rand.bin bs=1M count=100 status=progress
-ls -lh /tmp/cfs2_mount/big_rand.bin
-du -h /tmp/cfs2_backing/.crunchfs/data
+dd if=/dev/urandom of=/tmp/cfs_mount/big_rand.bin bs=1M count=100 status=progress
+ls -lh /tmp/cfs_mount/big_rand.bin
+du -h /tmp/cfs_backing/.crunchfs/data
 ```
+
+- Expected return/output:
+  - Each `dd` prints transferred bytes and throughput.
+  - `ls -lh` shows both files near 100M logical size.
+  - `du -h` increases much less for `/dev/zero` data than `/dev/urandom` data.
+- Meaning:
+  - Filesystem is transparent logically, while compression effectiveness depends on input entropy.
 
 ## Persistence + integrity
 
 ```bash
-sha256sum /tmp/cfs2_mount/big_zero.bin
-fusermount3 -u /tmp/cfs2_mount
-/home/nafis/CSE323/Project/CrunchFS-2/CrunchFS/build/passthrough_cfs /tmp/cfs2_backing /tmp/cfs2_mount -f
-sha256sum /tmp/cfs2_mount/big_zero.bin
+sha256sum /tmp/cfs_mount/big_zero.bin
+fusermount3 -u /tmp/cfs_mount
+./build/passthrough_cfs /tmp/cfs_backing /tmp/cfs_mount -f
+sha256sum /tmp/cfs_mount/big_zero.bin
 ```
+
+- Expected return/output:
+  - First and second `sha256sum` hashes should be identical.
+  - `fusermount3 -u` returns silently on successful unmount.
+  - Remount command again stays in foreground.
+- Meaning:
+  - Data persisted in backing store and remained unchanged across unmount/remount.
 
 ## Stats endpoint check
 
 ```bash
-cat /tmp/cfs2_mount/.cfs_stats
+cat /tmp/cfs_mount/.cfs_stats
 ```
+
+- Expected return/output:
+  - Three lines similar to: `logical_bytes ...`, `compressed_bytes ...`, `ratio ...`.
+- Meaning:
+  - Runtime aggregate counters are exposed correctly through virtual stats file.
 
 ## Concurrent smoke check
 
 ```bash
-dd if=/dev/zero of=/tmp/cfs2_mount/w1.bin bs=1M count=80 status=none &
-dd if=/dev/zero of=/tmp/cfs2_mount/w2.bin bs=1M count=80 status=none &
+dd if=/dev/zero of=/tmp/cfs_mount/w1.bin bs=1M count=80 status=none &
+dd if=/dev/zero of=/tmp/cfs_mount/w2.bin bs=1M count=80 status=none &
 wait
-sha256sum /tmp/cfs2_mount/w1.bin /tmp/cfs2_mount/w2.bin
+sha256sum /tmp/cfs_mount/w1.bin /tmp/cfs_mount/w2.bin
 ```
+
+- Expected return/output:
+  - Background `dd` commands return control immediately due to `&`; `wait` blocks until both finish.
+  - `sha256sum` prints two hash lines (one for each file).
+- Meaning:
+  - Parallel write workload completes successfully and produced valid file outputs.
 
 ## One-command demo (`demo.sh`)
 
 ```bash
-cd /home/nafis/CSE323/Project/CrunchFS-2/CrunchFS
 ./demo.sh
 ```
+
+- Expected return/output:
+  - Script prints step-by-step checks and ends with success summary.
+- Meaning:
+  - End-to-end validation pipeline (build, run, correctness, compression, stats, persistence, concurrency) passed.
+
+## Cleanup (after demo/testing)
+
+```bash
+fusermount3 -u /tmp/cfs_mount 2>/dev/null || true
+rm -rf /tmp/cfs_mount /tmp/cfs_backing
+rm -rf build
+```
+
+- Expected return/output:
+  - `fusermount3 -u ... || true` may print nothing (already unmounted case is tolerated).
+  - `rm -rf` commands print nothing on success.
+- Meaning:
+  - Mount is unmounted and temporary runtime/build artifacts are removed for a clean rerun.
 
 What `demo.sh` automatically demonstrates:
 
@@ -195,15 +263,15 @@ What `demo.sh` automatically demonstrates:
 - File from `/dev/zero` contains repeated bytes and is highly compressible.
 - File from `/dev/urandom` has high entropy and is weakly compressible.
 - Therefore:
-  - logical size (`ls -lh /tmp/cfs2_mount/file`) can be same in both cases
-  - physical size (`du -h /tmp/cfs2_backing/.crunchfs/data`) differs significantly
+  - logical size (`ls -lh /tmp/cfs_mount/file`) can be same in both cases
+  - physical size (`du -h /tmp/cfs_backing/.crunchfs/data`) differs significantly
 - This directly demonstrates transparent compression.
 
 ---
 
 ## 7) Report-ready code excerpts
 
-Use these snippets from `CrunchFS-2/CrunchFS/src/fuse_ops.cpp` to explain core behavior.
+Use these snippets from `src/fuse_ops.cpp` to explain core behavior.
 
 ### A) FUSE callback registration (daemon contract)
 
@@ -279,6 +347,7 @@ g_pool  = new ThreadPool(workers);
 - Current code is multithread-capable and thread-safe, but performance tuning is still possible.
 - Metadata path-id mapping uses deterministic FNV-1a 64-bit hash; strict SHA-256 can be upgraded if rubric requires.
 - Current callback surface focuses on file operations used by the project demo; additional callbacks can be added if needed by evaluator scenarios.
+- Ownership-change semantics (`chown`) are not implemented; cross-filesystem `mv` into mount can report ownership preservation errors, so demo flow should prefer `cp` + verify + optional source removal.
 - CUDA acceleration path is optional and not yet implemented.
 
 ---
